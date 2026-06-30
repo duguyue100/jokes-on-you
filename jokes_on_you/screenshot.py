@@ -1,0 +1,158 @@
+"""Cross-platform screenshot capture with a layered fallback chain.
+
+Primary: Qt's ``QScreen.grabWindow`` (works on X11 / Windows / macOS).
+Fallbacks (in order):
+  * Wayland with ``grim``   -> per-screen geometry capture
+  * X11 with ``scrot``      -> whole-display, then crop
+  * macOS with ``screencapture``
+  * Windows / cross-platform with ``mss``
+  * Qt grabWindow (last resort, may be black on Wayland)
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+from typing import Optional
+
+from PySide6.QtCore import QRect
+from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtWidgets import QApplication
+
+from .platform_lock import _is_wayland
+
+
+def _pixmap_from_grim(geometry: QRect) -> Optional[QPixmap]:
+    if not shutil.which("grim"):
+        return None
+    geo = f"{geometry.x()},{geometry.y()} {geometry.width()}x{geometry.height()}"
+    try:
+        proc = subprocess.run(
+            ["grim", "-g", geo, "-t", "png", "-"],
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+    img = QImage.fromData(proc.stdout, "png")
+    if img.isNull():
+        return None
+    return QPixmap.fromImage(img)
+
+
+def _pixmap_from_scrot(geometry: QRect) -> Optional[QPixmap]:
+    if not shutil.which("scrot"):
+        return None
+    try:
+        proc = subprocess.run(
+            ["scrot", "-o", "-"], check=True, capture_output=True, timeout=5
+        )
+        img = QImage.fromData(proc.stdout, "png")
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if img.isNull():
+        return None
+    full = QPixmap.fromImage(img)
+    return full.copy(geometry)
+
+
+def _pixmap_from_screencapture(geometry: QRect) -> Optional[QPixmap]:
+    if sys.platform != "darwin" or not shutil.which("screencapture"):
+        return None
+    try:
+        proc = subprocess.run(
+            ["screencapture", "-x", "-R",
+             f"{geometry.x()},{geometry.y()},{geometry.width()},{geometry.height()}",
+             "-"],
+            check=True, capture_output=True, timeout=5,
+        )
+        img = QImage.fromData(proc.stdout, "png")
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if img.isNull():
+        return None
+    return QPixmap.fromImage(img)
+
+
+def _pixmap_from_mss(geometry: QRect) -> Optional[QPixmap]:
+    try:
+        import mss
+    except ImportError:
+        return None
+    try:
+        with mss.mss() as sct:
+            shot = sct.grab({
+                "left": geometry.x(), "top": geometry.y(),
+                "width": geometry.width(), "height": geometry.height(),
+            })
+            import mss.tools
+            import io
+            buf = io.BytesIO()
+            mss.tools.to_png(shot.rgb, shot.size, buf)
+            img = QImage.fromData(buf.getvalue(), "png")
+    except Exception:
+        return None
+    if img.isNull():
+        return None
+    return QPixmap.fromImage(img)
+
+
+def _pixmap_is_blank(pix: QPixmap) -> bool:
+    if pix.isNull():
+        return True
+    small = pix.scaled(8, 8).toImage()
+    first = small.pixelColor(0, 0)
+    for y in range(8):
+        for x in range(8):
+            c = small.pixelColor(x, y)
+            if c.red() != first.red() or c.green() != first.green() or c.blue() != first.blue():
+                return False
+    return True
+
+
+def capture_screen(qscreen) -> QPixmap:
+    """Return a QPixmap of the given QScreen's current contents.
+
+    Tries the most reliable backend first for the current platform.
+    Raises RuntimeError if every backend fails.
+    """
+    geo = qscreen.geometry()
+    candidates = []
+
+    if _is_wayland():
+        candidates += [_pixmap_from_grim, _pixmap_from_mss]
+    elif sys.platform == "darwin":
+        candidates += [_pixmap_from_screencapture, _pixmap_from_mss]
+    elif sys.platform == "win32":
+        candidates += [_pixmap_from_mss]
+    else:
+        candidates += [_pixmap_from_scrot, _pixmap_from_mss]
+
+    def _qt_grab():
+        try:
+            return qscreen.grabWindow(0, geo.x(), geo.y(), geo.width(), geo.height())
+        except Exception:
+            return None
+
+    candidates.append(lambda: _qt_grab())
+
+    last: Optional[QPixmap] = None
+    for fn in candidates:
+        try:
+            pix = fn()
+        except Exception:
+            pix = None
+        if pix is not None and not pix.isNull() and not _pixmap_is_blank(pix):
+            return pix
+        if pix is not None and not pix.isNull():
+            last = pix
+
+    if last is not None and not last.isNull():
+        return last
+    raise RuntimeError(
+        "All screenshot backends failed. On Wayland install `grim`; "
+        "on X11 install `scrot`; or `pip install mss Pillow`."
+    )
