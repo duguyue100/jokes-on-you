@@ -54,40 +54,50 @@ class TrapApp:
                 print(f"error: could not load decoy image: {p}", file=sys.stderr)
                 return 2
 
-        decoys: list[Optional[QPixmap]] = []
-        if shared_decoy is not None:
-            decoys = [shared_decoy for _ in screens]
-        else:
-            # Live screenshot per screen.
-            for scr in screens:
-                try:
-                    pix = capture_screen(scr)
-                except Exception as e:
-                    print(f"warning: screenshot failed for screen {scr.name()}: {e}",
-                          file=sys.stderr)
-                    pix = None
-                decoys.append(pix)
-
         # Build one fullscreen window per screen. Keep them hidden during ARMING
         # so the user still sees the real desktop during the grace period.
-        for scr, decoy in zip(screens, decoys):
+        # Live screenshots are NOT captured here: they are captured at the END
+        # of the grace period (see _capture_and_arm) so the user can switch to
+        # the desired screen/workspace during grace and have THAT frozen as the
+        # decoy. A static --decoy-image is set now since it doesn't change.
+        for scr in screens:
             w = TrapWindow(scr, controller)
             controller.add_window(w)
-            if decoy is not None and not decoy.isNull():
-                if shared_decoy is not None:
-                    w.set_decoy_scaled(decoy)
-                else:
-                    w.set_decoy(decoy)
-            # Do NOT show yet; arm() will show them.
+            if shared_decoy is not None and not shared_decoy.isNull():
+                w.set_decoy_scaled(shared_decoy)
+            # Do NOT show yet; _capture_and_arm will show them.
 
         controller.state = ARMING
 
-        # Grace countdown -> arm
+        # Grace countdown -> capture live screenshots -> arm
         ms = int(self.grace * 1000)
-        QTimer.singleShot(max(0, ms), controller.arm)
+        QTimer.singleShot(max(0, ms), self._capture_and_arm)
 
         controller.unlocked.connect(app.quit)
         return app.exec()
+
+    def _capture_and_arm(self) -> None:
+        """Called at the end of the grace period.
+
+        Captures a live screenshot of each screen and installs it as that
+        window's decoy, then arms the trap (shows the fullscreen windows).
+        Capturing here — rather than at launch — lets the user switch to the
+        screen they want frozen during the grace period. The windows are still
+        hidden at capture time, so they never appear in their own screenshot.
+        """
+        if self.controller is None:
+            return
+        if self.decoy_image is None:
+            for w in self.controller.windows:
+                try:
+                    pix = capture_screen(w.screen)
+                except Exception as e:
+                    print(f"warning: screenshot failed for screen {w.screen.name()}: {e}",
+                          file=sys.stderr)
+                    pix = None
+                if pix is not None and not pix.isNull():
+                    w.set_decoy(pix)
+        self.controller.arm()
 
 
 def prompt_password() -> str:
