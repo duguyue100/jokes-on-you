@@ -28,7 +28,8 @@ System screenshot helpers (pick the one for your platform):
 
 | Platform | Tool   | Install                       |
 |----------|--------|-------------------------------|
-| Wayland  | `grim` | `apt install grim`            |
+| GNOME Wayland | `gnome-screenshot` | `apt install gnome-screenshot` |
+| wlroots Wayland | `grim` | `apt install grim`            |
 | X11      | `scrot`| `apt install scrot`           |
 | macOS    | built-in `screencapture` | —                |
 | Windows  | `mss` (pip) | see above                |
@@ -64,17 +65,16 @@ When the trap fires, type your password and press **Enter** to unlock.
 
 ## Wayland note
 
-On a real Wayland session, `mss` and Qt's `grabWindow` only see the XWayland
-root window (black). For a *convincing* live-screenshot decoy you must install
-a Wayland-native capturer:
+On Wayland, `mss` and Qt's `grabWindow` only see the XWayland root window
+(black). For a *convincing* live-screenshot decoy you need a compositor-native
+capturer:
 
-```bash
-sudo apt install grim     # or: dnf install grim, pacman -S grim
-```
+* **GNOME Wayland**: `sudo apt install gnome-screenshot` (auto-detected)
+* **wlroots (Sway/Hyprland/etc)**: `sudo apt install grim` (auto-detected)
 
-Without `grim`, either:
-* pass `--decoy-image PATH` with a pre-taken screenshot or wallpaper, or
-* accept a black decoy (the trap still fires; it's just less convincing).
+The fallback chain tries `grim` → `gnome-screenshot` → `mss` → Qt. If none
+produce a non-blank image, either pass `--decoy-image PATH` with a pre-taken
+screenshot or accept a black decoy (the trap still fires).
 
 ## How it works
 

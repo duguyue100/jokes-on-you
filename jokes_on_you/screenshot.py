@@ -77,6 +77,38 @@ def _pixmap_from_screencapture(geometry: QRect) -> Optional[QPixmap]:
     return QPixmap.fromImage(img)
 
 
+def _pixmap_from_gnome_screenshot(geometry: QRect) -> Optional[QPixmap]:
+    """GNOME Wayland: use gnome-screenshot (whole-display), then crop.
+
+    gnome-screenshot has no per-region CLI flag on Wayland, so we capture the
+    full screen to a temp file and crop to the requested geometry.
+    """
+    if not shutil.which("gnome-screenshot"):
+        return None
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.close()
+    try:
+        subprocess.run(
+            ["gnome-screenshot", f"--file={tmp.name}"],
+            check=True, capture_output=True, timeout=8,
+        )
+        img = QImage(tmp.name)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+    if img.isNull():
+        return None
+    full = QPixmap.fromImage(img)
+    # Crop to the requested screen geometry (gnome-screenshot captures the
+    # whole desktop including any taskbar across all monitors).
+    return full.copy(geometry)
+
+
 def _pixmap_from_mss(geometry: QRect) -> Optional[QPixmap]:
     try:
         import mss
@@ -123,7 +155,7 @@ def capture_screen(qscreen) -> QPixmap:
     candidates = []
 
     if _is_wayland():
-        candidates += [_pixmap_from_grim, _pixmap_from_mss]
+        candidates += [_pixmap_from_grim, _pixmap_from_gnome_screenshot, _pixmap_from_mss]
     elif sys.platform == "darwin":
         candidates += [_pixmap_from_screencapture, _pixmap_from_mss]
     elif sys.platform == "win32":
@@ -137,12 +169,12 @@ def capture_screen(qscreen) -> QPixmap:
         except Exception:
             return None
 
-    candidates.append(lambda: _qt_grab())
+    candidates.append(lambda g: _qt_grab())
 
     last: Optional[QPixmap] = None
     for fn in candidates:
         try:
-            pix = fn()
+            pix = fn(geo)
         except Exception:
             pix = None
         if pix is not None and not pix.isNull() and not _pixmap_is_blank(pix):

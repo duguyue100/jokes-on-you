@@ -27,10 +27,20 @@ def lock_session(dry_run: bool = False) -> bool:
             ["loginctl", "lock-session"],
         ]
     if sys.platform == "darwin":
+        # Robust lock chain for macOS, most-reliable first:
+        # 1.CGSession -suspend (fast, no permissions; path varies by OS version)
+        # 2. ScreenSaverEngine (launches screensaver; requires password-on-wake)
+        # 3. pmset displaysleepnow (sleeps display; requires password-on-wake)
+        # 4. osascript keystroke (needs Accessibility permission)
         candidates += [
             ["/System/Library/CoreServices/Menu Extras/User.menu/"
              "Contents/Resources/CGSession", "-suspend"],
+            ["/System/Library/CoreServices/ScreenSaverEngine.app/"
+             "Contents/MacOS/ScreenSaverEngine"],
             ["pmset", "displaysleepnow"],
+            ["osascript", "-e",
+             'tell application "System Events" to keystroke "q" '
+             "using {control down, command down}"],
         ]
     elif sys.platform == "win32":
         candidates += [["rundll32.exe", "user32.dll,LockWorkStation"]]

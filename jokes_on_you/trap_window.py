@@ -12,6 +12,7 @@ States:
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -66,7 +67,15 @@ class TrapWindow(QWidget):
         self.setScreen(self.screen)
         geo = self.screen.geometry()
         self.setGeometry(geo)
-        self.showFullScreen()
+        if sys.platform == "darwin":
+            # Avoid native fullscreen: it animates into a separate Space,
+            # delays the cover, and leaves the menu bar reachable. A plain
+            # borderless window at the screen geometry covers instantly and
+            # stays on the current Space.
+            self.showNormal()
+            self.setGeometry(geo)
+        else:
+            self.showFullScreen()
         self.raise_()
         self.activateWindow()
         self._fullscreen = True
