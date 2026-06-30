@@ -31,7 +31,7 @@ System screenshot helpers (pick the one for your platform):
 | GNOME Wayland | `gnome-screenshot` | `apt install gnome-screenshot` |
 | wlroots Wayland | `grim` | `apt install grim`            |
 | X11      | `scrot`| `apt install scrot`           |
-| macOS    | built-in `screencapture` | —                |
+| macOS    | built-in `screencapture` | — (needs Screen Recording permission for the launching app) |
 | Windows  | `mss` (pip) | see above                |
 
 ## Asset
@@ -44,24 +44,24 @@ for download links). If missing, a procedural fallback poster is drawn.
 
 ```bash
 joy                              # prompts for password, 5s grace
-joy --grace 10                   # 10 seconds to walk away
-joy --lock                       # also truly lock the OS session
-joy --dry-run --lock             # preview the lock command
-JOKES_PASSWORD=hunter2 joy       # no prompt
+joy --grace 10                   # 10 seconds to switch to the screen you want frozen
+joy --pass hunter2               # no prompt
+joy --decoy-image wallpaper.png  # static decoy instead of a live screenshot
 ```
 
-When the trap fires, type your password and press **Enter** to unlock.
+The screenshot is captured **at the end** of the grace period, so you can
+start `joy`, switch to the screen/workspace you want frozen, and that frame
+becomes the decoy. When the trap fires, type your password and press
+**Enter** to unlock.
 
 ## Flags
 
 | Flag              | Default | Purpose                                     |
 |-------------------|---------|---------------------------------------------|
-| `--grace SECONDS` | `5`     | delay before the trap arms                   |
-| `--lock`          | off     | also invoke the OS session lock on reveal    |
+| `--grace SECONDS` | `5`     | delay before the screenshot is captured and the trap arms |
+| `--pass PASSWORD` | —       | unlock password (default: prompt interactively) |
 | `--decoy-image PATH` | —   | use a static image as the decoy instead of a live screenshot |
-| `--password-file` | —       | read password from first line of a file      |
-| `--password-env`  | `JOKES_PASSWORD` | env var name for the password        |
-| `--dry-run`       | off     | don't actually lock; print what would happen |
+| `--password-file PATH` | — | read password from the first line of a file |
 
 ## Wayland note
 
@@ -74,14 +74,16 @@ capturer:
 
 The fallback chain tries `grim` → `gnome-screenshot` → `mss` → Qt. If none
 produce a non-blank image, either pass `--decoy-image PATH` with a pre-taken
-screenshot or accept a black decoy (the trap still fires).
+screenshot, or (on macOS) grant Screen Recording permission to the launching
+app. Otherwise the app raises a clear error instead of silently painting a
+black decoy.
 
 ## How it works
 
 1. Prompts for a password (never persisted).
-2. Captures a screenshot of every screen (Qt `grabWindow` → `grim`/`scrot`/
+2. Waits `--grace` seconds so you can switch to the screen you want frozen.
+3. Captures a screenshot of every screen (Qt `grabWindow` → `grim`/`scrot`/
    `screencapture`/`mss` fallback chain).
-3. Waits `--grace` seconds so you can walk away.
 4. Opens one borderless, always-on-top, fullscreen window per screen
    showing the screenshot — the decoy.
 5. Any mouse-move / click / scroll / keypress trips the reveal: Uncle Sam
@@ -95,9 +97,13 @@ fullscreen window. This keeps it Wayland-friendly and ethically clean.
 ## Limitations
 
 * OS shortcuts the compositor doesn't let clients intercept (Alt+Tab,
-  Super, Cmd+Tab, Ctrl+Alt+Del) can still escape the overlay. Use
-  `--lock` to genuinely lock the session on reveal.
-* macOS may require Accessibility and/or Screen Recording permission.
+  Super, Cmd+Tab, Ctrl+Alt+Del) can still escape the overlay.
+* macOS: Screen Recording permission must be granted to the app that
+  launches `joy` (e.g. Ghostty/Terminal/iTerm) in System Settings →
+  Privacy & Security → Screen Recording, otherwise the decoy is blank.
+  On macOS the trap windows are regular borderless windows (not panels)
+  and force-activate the app to the foreground, so `joy` briefly appears
+  in the Dock during the trap.
 * First Wayland screenshot may pop a portal consent dialog.
 
 ## License
