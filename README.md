@@ -1,4 +1,4 @@
-# jokes-on-you
+# JOKES ON YOU!
 
 Fighting back friendly fires.
 
