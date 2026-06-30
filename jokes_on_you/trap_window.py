@@ -23,8 +23,6 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QWidget
 
-from .platform_lock import lock_session
-
 ASSETS = Path(__file__).resolve().parent / "assets"
 UNCLE_SAM_PATH = ASSETS / "uncle_sam.png"
 
@@ -217,16 +215,13 @@ class TrapController(QObject):
 
     unlocked = Signal()
 
-    def __init__(self, password: str, do_lock: bool, dry_run: bool) -> None:
+    def __init__(self, password: str) -> None:
         super().__init__()
         self.password = password
-        self.do_lock = do_lock
-        self.dry_run = dry_run
         self.state: str = ARMING
         self.buffer: str = ""
         self.uncle_sam: Optional[QPixmap] = None  # loaded in load_assets()
         self.windows: list[TrapWindow] = []
-        self._reveal_done = False
 
     def load_assets(self) -> None:
         """Call after QApplication is constructed."""
@@ -256,12 +251,6 @@ class TrapController(QObject):
             w.set_state(REVEALED)
             w.show_on_screen()
             w.setFocus()
-        if self.do_lock and not self._reveal_done:
-            self._reveal_done = True
-            try:
-                lock_session(self.dry_run)
-            except Exception:
-                pass
 
     # ---- password entry ----
     def feed_qkeyevent(self, e: QKeyEvent) -> None:

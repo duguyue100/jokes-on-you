@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -40,21 +39,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="seconds before the trap arms (default: 5). Use this to walk away.",
     )
     p.add_argument(
-        "--lock", action="store_true",
-        help="also lock the OS session when the trap fires (fight-back mode).",
+        "--pass", metavar="PASSWORD", dest="password",
+        help="unlock password (default: prompt interactively).",
     )
     p.add_argument(
         "--password-file", metavar="PATH",
         help="read unlock password from the first line of this file instead of prompting.",
-    )
-    p.add_argument(
-        "--password-env", metavar="VAR", default="JOKES_PASSWORD",
-        help="env var to consult for the password (default: JOKES_PASSWORD). "
-             "Ignored if --password-file is set.",
-    )
-    p.add_argument(
-        "--dry-run", action="store_true",
-        help="do not actually invoke OS lock; print what would happen.",
     )
     p.add_argument(
         "--decoy-image", metavar="PATH",
@@ -70,12 +60,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.password_file:
         password = _read_password_file(args.password_file)
+    elif args.password is not None:
+        password = args.password
     else:
-        env_pw = os.environ.get(args.password_env)
-        if env_pw:
-            password = env_pw
-        else:
-            password = prompt_password()
+        password = prompt_password()
 
     if args.grace < 0:
         print("error: --grace must be >= 0", file=sys.stderr)
@@ -84,8 +72,6 @@ def main(argv: list[str] | None = None) -> int:
     app = TrapApp(
         password=password,
         grace=args.grace,
-        do_lock=args.lock,
-        dry_run=args.dry_run,
         decoy_image=args.decoy_image,
     )
     return app.run()

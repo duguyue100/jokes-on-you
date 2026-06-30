@@ -18,12 +18,10 @@ from .trap_window import TrapController, TrapWindow, ARMING, ARMED
 
 
 class TrapApp:
-    def __init__(self, password: str, grace: float, do_lock: bool, dry_run: bool,
+    def __init__(self, password: str, grace: float,
                  decoy_image: Optional[str] = None) -> None:
         self.password = password
         self.grace = grace
-        self.do_lock = do_lock
-        self.dry_run = dry_run
         self.decoy_image = decoy_image
         self.qt_app: Optional[QApplication] = None
         self.controller: Optional[TrapController] = None
@@ -38,7 +36,7 @@ class TrapApp:
             print("error: no screens detected", file=sys.stderr)
             return 2
 
-        controller = TrapController(self.password, self.do_lock, self.dry_run)
+        controller = TrapController(self.password)
         self.controller = controller
         controller.load_assets()
 
