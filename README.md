@@ -16,10 +16,8 @@ laptop and posts "I'm buying everyone beer!" on Slack.
 Requires Python 3.9+. Recommended: use `uv` or `pip` in a venv.
 
 ```bash
-uv venv .venv
-uv pip install --python .venv/bin/python -e .
-# optional fallback screenshot backends:
-uv pip install --python .venv/bin/python mss Pillow
+uv venv --python 3.12
+uv pip install -e .
 ```
 
 This installs a console script named **`joy`**.
