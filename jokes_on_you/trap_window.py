@@ -48,9 +48,16 @@ class TrapWindow(QWidget):
 
     def __init__(self, screen, controller: "TrapController") -> None:
         super().__init__()
-        self.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
-        )
+        # On macOS, Qt.Tool maps to an NSPanel which only floats above the
+        # *owning* app's key window and cannot bring a background app to the
+        # front. Since the trap arms from a timer while another app (Terminal/
+        # IDE) is focused, a panel never rises above it. Use a regular
+        # frameless borderless NSWindow instead so requestActivate() can force
+        # [NSApp activateIgnoringOtherApps:YES] and genuinely steal focus.
+        flags = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
+        if sys.platform != "darwin":
+            flags |= Qt.Tool  # keep panels off the taskbar on Linux/Windows
+        self.setWindowFlags(flags)
         self.controller = controller
         self.screen = screen
         self.decoy: Optional[QPixmap] = None
@@ -78,6 +85,13 @@ class TrapWindow(QWidget):
             self.showFullScreen()
         self.raise_()
         self.activateWindow()
+        # On macOS Tahoe, activateWindow() alone isn't enough to bring a
+        # background app above the focused Terminal; force a real activation
+        # request on the underlying QWindow so NSApp ignores other apps.
+        if sys.platform == "darwin":
+            wh = self.windowHandle()
+            if wh is not None:
+                wh.requestActivate()
         self._fullscreen = True
 
     def set_decoy(self, pix: QPixmap) -> None:

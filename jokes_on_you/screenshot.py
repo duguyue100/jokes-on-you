@@ -62,16 +62,27 @@ def _pixmap_from_scrot(geometry: QRect) -> Optional[QPixmap]:
 def _pixmap_from_screencapture(geometry: QRect) -> Optional[QPixmap]:
     if sys.platform != "darwin" or not shutil.which("screencapture"):
         return None
+    # On macOS 26 (Tahoe) `screencapture` silently ignores the stdout `-`
+    # form and writes zero bytes, so we capture to a temp file instead --
+    # same approach used for gnome-screenshot below.
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.close()
     try:
-        proc = subprocess.run(
+        subprocess.run(
             ["screencapture", "-x", "-R",
              f"{geometry.x()},{geometry.y()},{geometry.width()},{geometry.height()}",
-             "-"],
+             tmp.name],
             check=True, capture_output=True, timeout=5,
         )
-        img = QImage.fromData(proc.stdout, "png")
+        img = QImage(tmp.name)
     except (subprocess.SubprocessError, OSError):
         return None
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
     if img.isNull():
         return None
     return QPixmap.fromImage(img)
@@ -183,8 +194,22 @@ def capture_screen(qscreen) -> QPixmap:
             last = pix
 
     if last is not None and not last.isNull():
+        # Every backend produced only a blank image. On macOS this almost
+        # always means Screen Recording permission was not granted to the
+        # launching app (Terminal/iTerm/IDE), so be explicit rather than
+        # silently painting a black decoy.
+        if sys.platform == "darwin":
+            raise RuntimeError(
+                "Screenshot captured an all-blank image. On macOS this usually "
+                "means Screen Recording permission is missing: open System "
+                "Settings > Privacy & Security > Screen Recording and enable "
+                "the app that launched `joy` (e.g. Ghostty/Terminal/iTerm), "
+                "then restart it. Alternatively `pip install mss Pillow` and "
+                "ensure the same app has Screen Recording access."
+            )
         return last
     raise RuntimeError(
         "All screenshot backends failed. On Wayland install `grim`; "
-        "on X11 install `scrot`; or `pip install mss Pillow`."
+        "on X11 install `scrot`; on macOS grant Screen Recording permission "
+        "to the launching app; or `pip install mss Pillow`."
     )
